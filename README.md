@@ -46,9 +46,18 @@ See [ROADMAP.md](ROADMAP.md) for the staged build plan.
 
 ## Local setup
 
-Tooling and runtime instructions will be added once the first implementation language and package layout are finalized. Python is the planned scoring and backtesting runtime; Pine Script is the planned TradingView execution layer.
+The first Engine milestone targets Python 3.11+ and has no runtime dependencies.
+
+```powershell
+python -m pip install -e .
+catalystai rank --config config/compounder.v1.json --input fixtures/companies.v1.json
+python -m unittest discover -s tests -v
+```
+
+See [docs/Engine.md](docs/Engine.md) for the scoring contract, confidence and
+missing-data behavior, and fixture limitations. Pine Script remains the planned
+TradingView execution layer.
 
 ## License
 
 No license has been selected yet. See [LICENSE](LICENSE). Until a license is chosen, all rights are reserved.
-

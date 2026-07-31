@@ -7,19 +7,19 @@ This roadmap is intentionally staged. Later phases depend on evidence produced b
 - [x] Initialize repository structure
 - [x] Add project overview, roadmap, ignore rules, and license placeholder
 - [x] Add documentation placeholders
-- [ ] Select the initial Python toolchain and supported version
+- [x] Select the initial Python toolchain and supported version
 - [ ] Add contribution and coding standards
 - [ ] Add continuous integration
 
 ## Phase 1 — Scoring specification
 
-- [ ] Define Compounder Score
+- [x] Define Compounder Score
 - [ ] Define Opportunity Score
 - [ ] Define Catalyst Score
 - [ ] Define Expectations Risk
 - [ ] Define Asymmetry Score
 - [ ] Define Macro, Institutional, Sector Rotation, and Cycle scores
-- [ ] Define missing-data and confidence rules
+- [x] Define missing-data and confidence rules
 - [ ] Define ranking weights without double-counting correlated factors
 - [ ] Create worked examples for META and a second contrasting company
 
@@ -27,18 +27,18 @@ This roadmap is intentionally staged. Later phases depend on evidence produced b
 
 ## Phase 2 — Core engine
 
-- [ ] Create typed company, observation, score, thesis, and catalyst models
-- [ ] Implement deterministic scoring modules
-- [ ] Add score explanations and data-lineage metadata
-- [ ] Add configuration and weight versioning
-- [ ] Build a command-line ranking workflow
-- [ ] Add unit and integration tests
+- [x] Create initial typed company, observation, and score models
+- [x] Implement the deterministic Compounder scoring module
+- [x] Add Compounder score explanations and data-lineage metadata
+- [x] Add Compounder configuration and weight versioning
+- [x] Build an initial command-line ranking workflow
+- [x] Add Compounder unit tests
 
 **Exit criterion:** a fixed fixture produces stable, explainable rankings.
 
 ## Phase 3 — Data pipeline
 
-- [ ] Define source contracts and licensing constraints
+- [x] Define normalized source contracts and licensing constraints
 - [ ] Add price and volume history
 - [ ] Add SEC company filings and Form 4 activity
 - [ ] Add financial statements and valuation history
@@ -73,8 +73,11 @@ This roadmap is intentionally staged. Later phases depend on evidence produced b
 ## Phase 6 — Validation lab
 
 - [ ] Build point-in-time universe membership
-- [ ] Control survivorship and look-ahead bias
-- [ ] Include transaction costs, liquidity, and delistings
+- [x] Add a fail-closed historical dataset readiness gate
+- [x] Prevent signal-date look-ahead in the backtest engine
+- [x] Add configurable transaction costs and turnover
+- [ ] Add liquidity constraints and delistings
+- [x] Add daily, weekly, monthly, quarterly, and annual rebalance tests
 - [ ] Run walk-forward and out-of-sample tests
 - [ ] Compare against simple quality, value, momentum, and benchmark baselines
 - [ ] Publish failures and sensitivity analysis alongside successes
@@ -87,4 +90,3 @@ This roadmap is intentionally staged. Later phases depend on evidence produced b
 - [ ] Add model and data monitoring
 - [ ] Review factor usefulness and redundancy
 - [ ] Add AI-generated research summaries grounded in cited evidence
-
