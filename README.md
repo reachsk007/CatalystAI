@@ -65,6 +65,10 @@ VWAPPlus PRO now includes separate Pine v6 indicator and strategy scripts:
 - `tradingview/VWAPPlus_PRO_Indicator.pine`
 - `tradingview/VWAPPlus_PRO_Strategy.pine`
 
+The strategy is the combined CatalystAI/VWAPPlus PRO decision engine: CatalystAI
+research approval is mandatory before VWAP, market/sector, volume, trend,
+multi-timeframe, risk, and staged-exit logic can authorize a simulated trade.
+
 Both scripts accept explicit CatalystAI score and confidence inputs, support
 session, weekly, monthly, and manually anchored VWAP, and use confirmed-bar,
 lookahead-disabled execution evidence. See
