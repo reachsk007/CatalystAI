@@ -35,7 +35,22 @@ class PineContractTests(unittest.TestCase):
             for mode in ("Session", "Weekly", "Monthly", "Anchored"):
                 self.assertIn(f'"{mode}"', source)
 
+    def test_combined_strategy_contains_production_controls(self) -> None:
+        source = STRATEGY.read_text(encoding="utf-8")
+        for required in (
+            "researchApproved",
+            "allowShorts",
+            "minimumMtfVotes",
+            "minimumEvidence",
+            'strategy.exit("Long T1"',
+            'strategy.exit("Long runner"',
+            'strategy.exit("Short T1"',
+            'strategy.exit("Short runner"',
+            "maximumBarsInTrade",
+            "process_orders_on_close = false",
+        ):
+            self.assertIn(required, source)
+
 
 if __name__ == "__main__":
     unittest.main()
-
