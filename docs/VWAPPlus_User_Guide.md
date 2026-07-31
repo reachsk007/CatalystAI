@@ -9,9 +9,13 @@ strength, and risk structure provide an actionable entry.
 - `VWAPPlus_PRO_Indicator.pine` provides visual VWAP structure, research gating,
   relative strength, accumulation/distribution, liquidity sweeps, invalidation,
   target, position-size guidance, and alerts.
-- `VWAPPlus_PRO_Strategy.pine` mirrors the core confirmed-bar entry logic and adds
-  next-bar execution, commissions, slippage, ATR/VWAP stops, profit targets,
-  dynamic risk sizing, and date-range controls.
+- `VWAPPlus_PRO_Strategy.pine` is the combined production decision engine. It
+  gates every trade with CatalystAI research approval, then applies VWAP
+  structure, long/short market and sector evidence, confirmed higher-timeframe
+  votes, ADX/DI trend quality, relative volume, and confirmed swing structure.
+  Execution includes risk-budgeted sizing, staged T1/runner exits, break-even
+  and ATR trailing protection, cooldowns, time stops, session exits, commission,
+  slippage, and date-range controls.
 
 ## CatalystAI integration
 
@@ -42,4 +46,3 @@ The bands use volume-weighted dispersion around the active VWAP.
 
 Nothing in these scripts is investment advice. Backtests are simulations and may
 not represent achievable fills or future results.
-
