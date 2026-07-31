@@ -1,0 +1,91 @@
+{
+  "companies": [
+    {
+      "ticker": "META",
+      "company_name": "Meta Platforms, Inc.",
+      "as_of_date": "2026-07-30",
+      "factors": {
+        "moat": {
+          "score": 92,
+          "confidence": 0.9,
+          "evidence": "Global network effects and scaled advertising distribution.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "growth_durability": {
+          "score": 84,
+          "confidence": 0.75,
+          "evidence": "Engagement, monetization, and AI-driven ad improvements support growth.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "capital_efficiency": {
+          "score": 88,
+          "confidence": 0.85,
+          "evidence": "Core platforms historically produce strong returns despite heavy infrastructure investment.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "balance_sheet": {
+          "score": 90,
+          "confidence": 0.9,
+          "evidence": "Strong liquidity and cash generation provide strategic flexibility.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "management_execution": {
+          "score": 82,
+          "confidence": 0.7,
+          "evidence": "Execution improved after cost discipline, with ongoing capital-allocation uncertainty.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "cash_generation": {
+          "score": 94,
+          "confidence": 0.9,
+          "evidence": "Advertising economics support substantial operating and free cash flow.",
+          "source": "Manual research fixture; validate before investment use"
+        }
+      }
+    },
+    {
+      "ticker": "F",
+      "company_name": "Ford Motor Company",
+      "as_of_date": "2026-07-30",
+      "factors": {
+        "moat": {
+          "score": 55,
+          "confidence": 0.8,
+          "evidence": "Brand and truck franchises are valuable but compete in a capital-intensive market.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "growth_durability": {
+          "score": 42,
+          "confidence": 0.7,
+          "evidence": "Cyclical demand and technology transition reduce growth visibility.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "capital_efficiency": {
+          "score": 38,
+          "confidence": 0.8,
+          "evidence": "Manufacturing intensity and restructuring needs constrain returns on capital.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "balance_sheet": {
+          "score": 50,
+          "confidence": 0.7,
+          "evidence": "Industrial liquidity is offset by cyclicality and financing obligations.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "management_execution": {
+          "score": 52,
+          "confidence": 0.65,
+          "evidence": "Execution is mixed across cost control, quality, and electric-vehicle investment.",
+          "source": "Manual research fixture; validate before investment use"
+        },
+        "cash_generation": {
+          "score": 46,
+          "confidence": 0.7,
+          "evidence": "Cash generation is meaningful but volatile through industry cycles.",
+          "source": "Manual research fixture; validate before investment use"
+        }
+      }
+    }
+  ]
+}
+
