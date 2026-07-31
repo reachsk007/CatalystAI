@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "minimum_coverage": 0.75,
+  "weights": {
+    "moat": 0.2,
+    "growth_durability": 0.15,
+    "capital_efficiency": 0.2,
+    "balance_sheet": 0.15,
+    "management_execution": 0.15,
+    "cash_generation": 0.15
+  }
+}
+
