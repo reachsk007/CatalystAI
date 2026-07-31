@@ -1,0 +1,114 @@
+//@version=6
+strategy("CatalystAI VWAPPlus PRO Strategy", "VWAPPlus PRO Strategy", overlay = true, initial_capital = 100000, pyramiding = 0, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 1, process_orders_on_close = false, calc_on_order_fills = true)
+
+groupTest = "Backtest controls"
+startDate = input.time(timestamp("01 Jan 2015 00:00 +0000"), "Start date", group = groupTest)
+endDate = input.time(timestamp("31 Dec 2099 00:00 +0000"), "End date", group = groupTest)
+allowLongs = input.bool(true, "Allow long entries", group = groupTest)
+
+groupVwap = "VWAP structure"
+vwapMode = input.string("Weekly", "Anchor mode", options = ["Session", "Weekly", "Monthly", "Anchored"], group = groupVwap)
+anchorTime = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Manual anchor", group = groupVwap)
+bandMultiplier = input.float(1.0, "Band deviation", minval = 0.1, step = 0.1, group = groupVwap)
+
+groupEvidence = "Market evidence"
+marketSymbol = input.symbol("AMEX:SPY", "Market benchmark", group = groupEvidence)
+sectorSymbol = input.symbol("AMEX:XLK", "Sector benchmark", group = groupEvidence)
+relativeStrengthLength = input.int(63, "Relative-strength bars", minval = 5, group = groupEvidence)
+volumeLength = input.int(20, "Volume baseline", minval = 5, group = groupEvidence)
+
+groupCatalyst = "CatalystAI research gate"
+catalystScore = input.float(70.0, "CatalystAI score", minval = 0, maxval = 100, group = groupCatalyst)
+catalystConfidence = input.float(75.0, "Research confidence (%)", minval = 0, maxval = 100, group = groupCatalyst)
+minimumCatalystScore = input.float(60.0, "Minimum score", minval = 0, maxval = 100, group = groupCatalyst)
+minimumConfidence = input.float(60.0, "Minimum confidence (%)", minval = 0, maxval = 100, group = groupCatalyst)
+
+groupRisk = "Risk framework"
+atrLength = input.int(14, "ATR length", minval = 2, group = groupRisk)
+stopAtrMultiplier = input.float(1.5, "Stop distance (ATR)", minval = 0.25, step = 0.25, group = groupRisk)
+targetRiskMultiple = input.float(2.0, "Target R multiple", minval = 0.5, step = 0.25, group = groupRisk)
+riskBudget = input.float(1.0, "Equity risk per trade (%)", minval = 0.1, maxval = 5, step = 0.1, group = groupRisk)
+maximumAllocation = input.float(20.0, "Maximum allocation (%)", minval = 1, maxval = 100, group = groupRisk)
+exitOnVwapLoss = input.bool(true, "Exit on confirmed VWAP loss", group = groupRisk)
+
+bool calendarReset = switch vwapMode
+    "Session" => timeframe.change("1D")
+    "Weekly" => timeframe.change("1W")
+    "Monthly" => timeframe.change("1M")
+    => false
+bool anchoredActive = vwapMode != "Anchored" or time >= anchorTime
+bool firstAnchorBar = vwapMode == "Anchored" and time >= anchorTime and nz(time[1], 0) < anchorTime
+bool resetVwap = calendarReset or firstAnchorBar
+
+var float cumulativePV = na
+var float cumulativeV = na
+var float cumulativePV2 = na
+if not anchoredActive
+    cumulativePV := na
+    cumulativeV := na
+    cumulativePV2 := na
+else if resetVwap or na(cumulativePV)
+    cumulativePV := hlc3 * volume
+    cumulativeV := volume
+    cumulativePV2 := hlc3 * hlc3 * volume
+else
+    cumulativePV += hlc3 * volume
+    cumulativeV += volume
+    cumulativePV2 += hlc3 * hlc3 * volume
+
+float activeVwap = cumulativeV > 0 ? cumulativePV / cumulativeV : na
+float weightedVariance = cumulativeV > 0 ? math.max(cumulativePV2 / cumulativeV - activeVwap * activeVwap, 0) : na
+float weightedDeviation = math.sqrt(weightedVariance)
+float upperBand = activeVwap + bandMultiplier * weightedDeviation
+float lowerBand = activeVwap - bandMultiplier * weightedDeviation
+
+float marketClose = request.security(marketSymbol, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+float sectorClose = request.security(sectorSymbol, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+float stockReturn = close / close[relativeStrengthLength] - 1
+bool marketLeadership = stockReturn > marketClose / marketClose[relativeStrengthLength] - 1
+bool sectorLeadership = stockReturn > sectorClose / sectorClose[relativeStrengthLength] - 1
+float volumeBaseline = ta.sma(volume, volumeLength)
+float volumeRatio = volumeBaseline > 0 ? volume / volumeBaseline : 0
+float signedVolume = close > open ? volume : close < open ? -volume : 0
+float accumulationPressure = ta.ema(signedVolume, volumeLength) / math.max(ta.ema(volume, volumeLength), 1)
+bool accumulating = accumulationPressure > 0.05 and volumeRatio > 0.8
+
+bool inDateRange = time >= startDate and time <= endDate
+bool researchApproved = catalystScore >= minimumCatalystScore and catalystConfidence >= minimumConfidence
+bool bullishRegime = close > activeVwap and close > ta.ema(close, 50)
+bool longSetup = barstate.isconfirmed and inDateRange and allowLongs and researchApproved and bullishRegime and marketLeadership and sectorLeadership and accumulating
+
+float atr = ta.atr(atrLength)
+float candidateStop = activeVwap - stopAtrMultiplier * atr
+float riskPerShare = math.max(close - candidateStop, syminfo.mintick)
+float riskCapital = strategy.equity * riskBudget / 100
+float riskQuantity = riskCapital / riskPerShare
+float allocationQuantity = strategy.equity * maximumAllocation / 100 / close
+float entryQuantity = math.max(math.min(riskQuantity, allocationQuantity), 0)
+
+var float activeStop = na
+var float activeTarget = na
+if longSetup and strategy.position_size == 0 and entryQuantity > 0
+    activeStop := candidateStop
+    activeTarget := close + targetRiskMultiple * riskPerShare
+    strategy.entry("Long", strategy.long, qty = entryQuantity)
+
+if strategy.position_size > 0
+    strategy.exit("Risk exit", "Long", stop = activeStop, limit = activeTarget)
+    if exitOnVwapLoss and barstate.isconfirmed and close < activeVwap
+        strategy.close("Long", comment = "VWAP loss")
+
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    activeStop := na
+    activeTarget := na
+
+plot(activeVwap, "Active VWAP", color = close >= activeVwap ? color.teal : color.orange, linewidth = 2)
+upperPlot = plot(upperBand, "Upper VWAP band", color = color.new(color.teal, 55))
+lowerPlot = plot(lowerBand, "Lower VWAP band", color = color.new(color.teal, 55))
+fill(upperPlot, lowerPlot, color = color.new(color.teal, 92), title = "VWAP value area")
+plot(strategy.position_size > 0 ? activeStop : na, "Active stop", color = color.red, style = plot.style_linebr)
+plot(strategy.position_size > 0 ? activeTarget : na, "Active target", color = color.lime, style = plot.style_linebr)
+plotshape(longSetup and strategy.position_size == 0, "Entry setup", shape.triangleup, location.belowbar, color.lime, size = size.tiny)
+
+alertcondition(longSetup and strategy.position_size == 0, "VWAPPlus strategy entry", "VWAPPlus PRO strategy entry conditions passed on {{ticker}}.")
+
