@@ -58,6 +58,18 @@ See [docs/Engine.md](docs/Engine.md) for the scoring contract, confidence and
 missing-data behavior, and fixture limitations. Pine Script remains the planned
 TradingView execution layer.
 
+## TradingView execution
+
+VWAPPlus PRO now includes separate Pine v6 indicator and strategy scripts:
+
+- `tradingview/VWAPPlus_PRO_Indicator.pine`
+- `tradingview/VWAPPlus_PRO_Strategy.pine`
+
+Both scripts accept explicit CatalystAI score and confidence inputs, support
+session, weekly, monthly, and manually anchored VWAP, and use confirmed-bar,
+lookahead-disabled execution evidence. See
+[docs/VWAPPlus_User_Guide.md](docs/VWAPPlus_User_Guide.md).
+
 ## License
 
 No license has been selected yet. See [LICENSE](LICENSE). Until a license is chosen, all rights are reserved.

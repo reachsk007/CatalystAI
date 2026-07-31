@@ -52,13 +52,13 @@ This roadmap is intentionally staged. Later phases depend on evidence produced b
 
 ## Phase 4 — VWAPPlus PRO execution layer
 
-- [ ] Import and baseline the current VWAPPlus master Pine Script
-- [ ] Add weekly, monthly, session, and anchored VWAP modes
-- [ ] Add relative strength versus market and sector benchmarks
-- [ ] Add accumulation, liquidity sweep, and crash-reclaim evidence
-- [ ] Add manual CatalystAI score inputs
-- [ ] Add entry zone, invalidation, target, and position-size outputs
-- [ ] Separate indicator alerts from strategy backtests
+- [x] Establish the first VWAPPlus PRO Pine v6 baseline
+- [x] Add weekly, monthly, session, and anchored VWAP modes
+- [x] Add relative strength versus market and sector benchmarks
+- [x] Add accumulation, liquidity sweep, and crash-reclaim evidence
+- [x] Add manual CatalystAI score and confidence inputs
+- [x] Add invalidation, target, and position-size outputs
+- [x] Separate indicator alerts from strategy backtests
 
 **Exit criterion:** signals are non-repainting, documented, and reproducible on agreed test charts.
 
