@@ -14,5 +14,6 @@ Planned capabilities include:
 - manual CatalystAI score inputs, and
 - non-repainting alerts and testable strategy variants.
 
-The existing VWAPPlus master script should be imported and baselined before implementation begins.
-
+No prior master script was present in the repository. Version 1 therefore
+establishes a clean Pine v6 indicator and matching strategy baseline. See
+[VWAPPlus_User_Guide.md](VWAPPlus_User_Guide.md).
