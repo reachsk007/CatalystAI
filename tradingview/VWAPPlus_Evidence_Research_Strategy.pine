@@ -1,0 +1,129 @@
+//@version=6
+strategy("VWAPPlus Evidence Research", "VWAPPlus Research", overlay = true, pyramiding = 0, initial_capital = 100000, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 1, process_orders_on_close = false)
+
+// Isolated research harness. This script is not the production decision engine.
+groupTest = "01 - Backtest"
+startDate = input.time(timestamp("01 Jan 2020 00:00 +0000"), "Start", group = groupTest)
+endDate = input.time(timestamp("31 Dec 2099 00:00 +0000"), "End", group = groupTest)
+tradeSession = input.session("0930-1600", "Session", group = groupTest)
+allowLongs = input.bool(true, "Longs", group = groupTest)
+allowShorts = input.bool(true, "Shorts", group = groupTest)
+
+groupAnchor = "02 - Meaningful anchor AVWAP"
+anchorMode = input.string("Session open", "Anchor", options = ["Session open", "Manual event", "Gap", "Volume shock", "Liquidity event"], group = groupAnchor)
+manualAnchor = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Manual event", group = groupAnchor)
+gapThreshold = input.float(3.0, "Gap threshold (%)", minval = 0.1, group = groupAnchor) / 100
+anchorVolumeLength = input.int(20, "Volume baseline", minval = 2, group = groupAnchor)
+anchorVolumeRatio = input.float(2.0, "Volume shock ratio", minval = 1, group = groupAnchor)
+liquidityLookback = input.int(20, "Liquidity lookback", minval = 2, group = groupAnchor)
+
+groupModules = "03 - Isolated modules"
+module = input.string("AVWAP reclaim", "Test module", options = ["AVWAP reclaim", "Opening range", "Relative strength", "Failed breakout", "Volume participation", "Combined"], group = groupModules)
+openingRangeMinutes = input.int(15, "Opening range minutes", options = [5, 15, 30], group = groupModules)
+benchmark = input.symbol("AMEX:SPY", "Benchmark", group = groupModules)
+rsLength = input.int(12, "Relative strength bars", minval = 2, group = groupModules)
+minimumRelativeVolume = input.float(1.5, "Minimum relative volume", minval = 0.1, group = groupModules)
+
+groupRisk = "04 - Risk"
+atrLength = input.int(14, "ATR", minval = 2, group = groupRisk)
+stopAtr = input.float(1.5, "Stop ATR", minval = 0.25, group = groupRisk)
+targetR = input.float(2.0, "Target R", minval = 0.25, group = groupRisk)
+riskPercent = input.float(0.5, "Equity risk (%)", minval = 0.1, maxval = 2, group = groupRisk)
+
+bool inSession = not na(time(timeframe.period, tradeSession))
+bool newSession = inSession and not inSession[1]
+float priorHigh = ta.highest(high[1], liquidityLookback)
+float priorLow = ta.lowest(low[1], liquidityLookback)
+float priorVolumeMean = ta.sma(volume[1], anchorVolumeLength)
+bool gapEvent = math.abs(open / close[1] - 1) >= gapThreshold
+bool volumeEvent = priorVolumeMean > 0 and volume / priorVolumeMean >= anchorVolumeRatio
+bool liquidityEvent = (high > priorHigh and close < priorHigh) or (low < priorLow and close > priorLow)
+bool manualEvent = time >= manualAnchor and nz(time[1], 0) < manualAnchor
+bool anchorEvent = switch anchorMode
+    "Session open" => newSession
+    "Manual event" => manualEvent
+    "Gap" => gapEvent
+    "Volume shock" => volumeEvent
+    => liquidityEvent
+
+var float cumulativePV = na
+var float cumulativeV = na
+if anchorEvent
+    cumulativePV := hlc3 * volume
+    cumulativeV := volume
+else if not na(cumulativePV)
+    cumulativePV += hlc3 * volume
+    cumulativeV += volume
+float avwap = cumulativeV > 0 ? cumulativePV / cumulativeV : na
+
+var float rangeHigh = na
+var float rangeLow = na
+var int sessionStart = na
+if newSession
+    rangeHigh := high
+    rangeLow := low
+    sessionStart := time
+int rangeEnd = nz(sessionStart) + openingRangeMinutes * 60 * 1000
+bool buildingRange = inSession and time < rangeEnd
+if buildingRange and not newSession
+    rangeHigh := math.max(rangeHigh, high)
+    rangeLow := math.min(rangeLow, low)
+bool rangeComplete = inSession and time >= rangeEnd
+bool openingLong = rangeComplete and ta.crossover(close, rangeHigh)
+bool openingShort = rangeComplete and ta.crossunder(close, rangeLow)
+
+float benchmarkClose = request.security(benchmark, timeframe.period, close, barmerge.gaps_off, barmerge.lookahead_off)
+float assetReturn = close / close[rsLength] - 1
+float benchmarkReturn = benchmarkClose / benchmarkClose[rsLength] - 1
+float excessReturn = assetReturn - benchmarkReturn
+bool relativeLong = excessReturn > 0 and excessReturn > excessReturn[1]
+bool relativeShort = excessReturn < 0 and excessReturn < excessReturn[1]
+
+bool failedBreakout = high > priorHigh and close < priorHigh
+bool failedBreakdown = low < priorLow and close > priorLow
+float relativeVolume = priorVolumeMean > 0 ? volume / priorVolumeMean : 0
+bool volumeLong = relativeVolume >= minimumRelativeVolume and close > open
+bool volumeShort = relativeVolume >= minimumRelativeVolume and close < open
+bool avwapLong = not na(avwap) and ta.crossover(close, avwap)
+bool avwapShort = not na(avwap) and ta.crossunder(close, avwap)
+
+bool moduleLong = switch module
+    "AVWAP reclaim" => avwapLong
+    "Opening range" => openingLong
+    "Relative strength" => relativeLong
+    "Failed breakout" => failedBreakdown
+    "Volume participation" => volumeLong
+    => avwapLong and openingLong and relativeLong and volumeLong
+bool moduleShort = switch module
+    "AVWAP reclaim" => avwapShort
+    "Opening range" => openingShort
+    "Relative strength" => relativeShort
+    "Failed breakout" => failedBreakout
+    "Volume participation" => volumeShort
+    => avwapShort and openingShort and relativeShort and volumeShort
+
+bool eligible = barstate.isconfirmed and inSession and time >= startDate and time <= endDate
+float atr = ta.atr(atrLength)
+float riskCapital = strategy.equity * riskPercent / 100
+float quantity = riskCapital / math.max(stopAtr * atr * syminfo.pointvalue, syminfo.mintick)
+if strategy.position_size == 0 and eligible
+    if allowLongs and moduleLong
+        strategy.entry("Long", strategy.long, qty = quantity)
+    else if allowShorts and moduleShort
+        strategy.entry("Short", strategy.short, qty = quantity)
+
+if strategy.position_size > 0
+    float risk = stopAtr * atr
+    strategy.exit("Long exit", "Long", stop = strategy.position_avg_price - risk, limit = strategy.position_avg_price + targetR * risk)
+if strategy.position_size < 0
+    float risk = stopAtr * atr
+    strategy.exit("Short exit", "Short", stop = strategy.position_avg_price + risk, limit = strategy.position_avg_price - targetR * risk)
+if strategy.position_size != 0 and not inSession
+    strategy.close_all(comment = "Session close")
+
+plot(avwap, "Meaningful anchor AVWAP", color = color.yellow, linewidth = 2)
+plot(rangeComplete ? rangeHigh : na, "Opening range high", color = color.new(color.lime, 40), style = plot.style_linebr)
+plot(rangeComplete ? rangeLow : na, "Opening range low", color = color.new(color.red, 40), style = plot.style_linebr)
+plotshape(moduleLong and eligible, "Research long", shape.triangleup, location.belowbar, color.lime, size = size.tiny)
+plotshape(moduleShort and eligible, "Research short", shape.triangledown, location.abovebar, color.red, size = size.tiny)
+
