@@ -1,40 +1,41 @@
 //@version=6
-strategy("CatalystAI VWAPPlus PRO — Combined Decision Engine", "CatalystAI VWAPPlus PRO", overlay = true, initial_capital = 100000, pyramiding = 0, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 1, process_orders_on_close = false, calc_on_order_fills = true)
+strategy("CatalystAI VWAPPlus PRO — Combined Decision Engine", "CatalystAI VWAPPlus PRO", overlay = true, initial_capital = 100000, pyramiding = 0, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 1, process_orders_on_close = false, calc_on_order_fills = false, calc_on_every_tick = false)
 
-groupTest = "01 — Backtest controls"
+// Research strategy only. Signals are confirmed at bar close and orders use TradingView's
+// standard next-tick broker-emulator processing. Parameters must be frozen before OOS use.
+groupTest = "01 — Validation controls"
 startDate = input.time(timestamp("01 Jan 2015 00:00 +0000"), "Start date", group = groupTest)
 endDate = input.time(timestamp("31 Dec 2099 00:00 +0000"), "End date", group = groupTest)
+sampleMode = input.string("All data", "Evaluation sample", options = ["All data", "In-sample", "Out-of-sample", "Walk-forward OOS"], group = groupTest)
+validationStart = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Out-of-sample starts", group = groupTest)
+walkForwardTrainingBars = input.int(504, "Walk-forward training bars", minval = 20, group = groupTest)
+walkForwardTestBars = input.int(126, "Walk-forward test bars", minval = 5, group = groupTest)
 allowLongs = input.bool(true, "Allow long entries", group = groupTest)
 allowShorts = input.bool(true, "Allow short entries", group = groupTest)
 tradeSession = input.session("0930-1600", "Trading session", group = groupTest)
 useSessionFilter = input.bool(true, "Restrict intraday entries to session", group = groupTest)
-closeAtSessionEnd = input.bool(true, "Flatten near session close", group = groupTest)
+closeAtSessionEnd = input.bool(true, "Flatten after intraday session", group = groupTest)
 
-groupCatalyst = "02 — CatalystAI research gate"
-catalystScore = input.float(70.0, "CatalystAI score", minval = 0, maxval = 100, group = groupCatalyst)
-catalystConfidence = input.float(75.0, "Research confidence (%)", minval = 0, maxval = 100, group = groupCatalyst)
-minimumCatalystScore = input.float(60.0, "Minimum score", minval = 0, maxval = 100, group = groupCatalyst)
-minimumConfidence = input.float(60.0, "Minimum confidence (%)", minval = 0, maxval = 100, group = groupCatalyst)
-
-groupVwap = "03 — VWAP structure"
+groupVwap = "02 — VWAP structure"
 vwapMode = input.string("Weekly", "Anchor mode", options = ["Session", "Weekly", "Monthly", "Anchored"], group = groupVwap)
 anchorTime = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Manual anchor", group = groupVwap)
 bandMultiplier = input.float(1.0, "Band deviation", minval = 0.1, step = 0.1, group = groupVwap)
 maximumExtension = input.float(2.5, "Maximum VWAP extension (ATR)", minval = 0.25, step = 0.25, group = groupVwap)
 
-groupTrend = "04 — Trend and timeframe confirmation"
+groupTrend = "03 — Trend and adaptive confirmation"
 fastLength = input.int(20, "Fast EMA", minval = 2, group = groupTrend)
 slowLength = input.int(50, "Slow EMA", minval = 5, group = groupTrend)
 longLength = input.int(200, "Long EMA", minval = 20, group = groupTrend)
 diLength = input.int(14, "DI length", minval = 2, group = groupTrend)
 adxSmoothing = input.int(14, "ADX smoothing", minval = 2, group = groupTrend)
 minimumAdx = input.float(18.0, "Minimum ADX", minval = 0, group = groupTrend)
+timeframeProfile = input.string("Adaptive", "Confirmation profile", options = ["Adaptive", "Manual"], group = groupTrend)
 minimumMtfVotes = input.int(2, "Required MTF votes", minval = 0, maxval = 3, group = groupTrend)
-higherTimeframe1 = input.timeframe("60", "Confirmation timeframe 1", group = groupTrend)
-higherTimeframe2 = input.timeframe("240", "Confirmation timeframe 2", group = groupTrend)
-higherTimeframe3 = input.timeframe("D", "Confirmation timeframe 3", group = groupTrend)
+manualTimeframe1 = input.timeframe("60", "Manual timeframe 1", group = groupTrend)
+manualTimeframe2 = input.timeframe("240", "Manual timeframe 2", group = groupTrend)
+manualTimeframe3 = input.timeframe("D", "Manual timeframe 3", group = groupTrend)
 
-groupEvidence = "05 — Market evidence"
+groupEvidence = "04 — Computed research evidence"
 marketSymbol = input.symbol("AMEX:SPY", "Market benchmark", group = groupEvidence)
 sectorSymbol = input.symbol("AMEX:XLK", "Sector benchmark", group = groupEvidence)
 relativeStrengthLength = input.int(63, "Relative-strength bars", minval = 5, group = groupEvidence)
@@ -42,9 +43,10 @@ volumeLength = input.int(20, "Volume baseline", minval = 5, group = groupEvidenc
 minimumVolumeRatio = input.float(0.8, "Minimum relative volume", minval = 0, step = 0.1, group = groupEvidence)
 swingLength = input.int(5, "Confirmed swing strength", minval = 2, group = groupEvidence)
 minimumEvidence = input.float(0.62, "Minimum evidence score", minval = 0, maxval = 1, step = 0.01, group = groupEvidence)
+minimumDataConfidence = input.float(85.0, "Minimum data confidence (%)", minval = 0, maxval = 100, step = 5, group = groupEvidence)
 cooldownBars = input.int(5, "Signal cooldown bars", minval = 0, group = groupEvidence)
 
-groupRisk = "06 — Risk and exits"
+groupRisk = "05 — Risk and exits"
 atrLength = input.int(14, "ATR length", minval = 2, group = groupRisk)
 stopAtrMultiplier = input.float(1.5, "Initial stop (ATR)", minval = 0.25, step = 0.25, group = groupRisk)
 structureBuffer = input.float(0.25, "Structure buffer (ATR)", minval = 0, step = 0.05, group = groupRisk)
@@ -89,6 +91,15 @@ float weightedDeviation = math.sqrt(weightedVariance)
 float upperBand = activeVwap + bandMultiplier * weightedDeviation
 float lowerBand = activeVwap - bandMultiplier * weightedDeviation
 
+float chartSeconds = timeframe.in_seconds(timeframe.period)
+string adaptiveTimeframe1 = chartSeconds <= timeframe.in_seconds("5") ? "15" : chartSeconds <= timeframe.in_seconds("15") ? "60" : chartSeconds <= timeframe.in_seconds("60") ? "240" : chartSeconds <= timeframe.in_seconds("240") ? "D" : chartSeconds <= timeframe.in_seconds("D") ? "W" : chartSeconds <= timeframe.in_seconds("W") ? "M" : "3M"
+string adaptiveTimeframe2 = chartSeconds <= timeframe.in_seconds("5") ? "60" : chartSeconds <= timeframe.in_seconds("15") ? "240" : chartSeconds <= timeframe.in_seconds("60") ? "D" : chartSeconds <= timeframe.in_seconds("240") ? "W" : chartSeconds <= timeframe.in_seconds("D") ? "M" : chartSeconds <= timeframe.in_seconds("W") ? "3M" : "6M"
+string adaptiveTimeframe3 = chartSeconds <= timeframe.in_seconds("5") ? "240" : chartSeconds <= timeframe.in_seconds("15") ? "D" : chartSeconds <= timeframe.in_seconds("60") ? "W" : chartSeconds <= timeframe.in_seconds("240") ? "M" : chartSeconds <= timeframe.in_seconds("D") ? "3M" : chartSeconds <= timeframe.in_seconds("W") ? "12M" : "12M"
+string confirmationTimeframe1 = timeframeProfile == "Adaptive" ? adaptiveTimeframe1 : manualTimeframe1
+string confirmationTimeframe2 = timeframeProfile == "Adaptive" ? adaptiveTimeframe2 : manualTimeframe2
+string confirmationTimeframe3 = timeframeProfile == "Adaptive" ? adaptiveTimeframe3 : manualTimeframe3
+bool confirmationTimeframesValid = timeframe.in_seconds(confirmationTimeframe1) > chartSeconds and timeframe.in_seconds(confirmationTimeframe2) > chartSeconds and timeframe.in_seconds(confirmationTimeframe3) > chartSeconds
+
 float fastEma = ta.ema(close, fastLength)
 float slowEma = ta.ema(close, slowLength)
 float longEma = ta.ema(close, longLength)
@@ -99,11 +110,12 @@ f_mtfVote(string requestedTimeframe) =>
     float confirmedClose = request.security(syminfo.tickerid, requestedTimeframe, close[1], barmerge.gaps_off, barmerge.lookahead_off)
     float confirmedFast = request.security(syminfo.tickerid, requestedTimeframe, ta.ema(close, fastLength)[1], barmerge.gaps_off, barmerge.lookahead_off)
     float confirmedSlow = request.security(syminfo.tickerid, requestedTimeframe, ta.ema(close, slowLength)[1], barmerge.gaps_off, barmerge.lookahead_off)
-    confirmedClose > confirmedFast and confirmedFast > confirmedSlow ? 1 : confirmedClose < confirmedFast and confirmedFast < confirmedSlow ? -1 : 0
+    int vote = confirmedClose > confirmedFast and confirmedFast > confirmedSlow ? 1 : confirmedClose < confirmedFast and confirmedFast < confirmedSlow ? -1 : 0
+    [vote, not na(confirmedClose) and not na(confirmedFast) and not na(confirmedSlow)]
 
-int vote1 = f_mtfVote(higherTimeframe1)
-int vote2 = f_mtfVote(higherTimeframe2)
-int vote3 = f_mtfVote(higherTimeframe3)
+[vote1, timeframeReady1] = f_mtfVote(confirmationTimeframe1)
+[vote2, timeframeReady2] = f_mtfVote(confirmationTimeframe2)
+[vote3, timeframeReady3] = f_mtfVote(confirmationTimeframe3)
 int bullishVotes = (vote1 == 1 ? 1 : 0) + (vote2 == 1 ? 1 : 0) + (vote3 == 1 ? 1 : 0)
 int bearishVotes = (vote1 == -1 ? 1 : 0) + (vote2 == -1 ? 1 : 0) + (vote3 == -1 ? 1 : 0)
 
@@ -117,10 +129,11 @@ bool sectorLeadership = stockReturn > sectorReturn
 bool marketWeakness = stockReturn < marketReturn
 bool sectorWeakness = stockReturn < sectorReturn
 
-float volumeBaseline = ta.sma(volume, volumeLength)
-float volumeRatio = volumeBaseline > 0 ? volume / volumeBaseline : 0
+float priorVolumeBaseline = ta.sma(volume[1], volumeLength)
+float volumeRatio = priorVolumeBaseline > 0 ? volume / priorVolumeBaseline : 0
 float signedVolume = close > open ? volume : close < open ? -volume : 0
-float accumulationPressure = ta.ema(signedVolume, volumeLength) / math.max(ta.ema(volume, volumeLength), 1)
+float priorFlowBaseline = ta.ema(volume[1], volumeLength)
+float accumulationPressure = ta.ema(signedVolume, volumeLength) / math.max(priorFlowBaseline, 1)
 bool accumulating = accumulationPressure > 0.05 and volumeRatio >= minimumVolumeRatio
 bool distributing = accumulationPressure < -0.05 and volumeRatio >= minimumVolumeRatio
 
@@ -142,15 +155,31 @@ float shortStructure = (bearishReclaim ? 0.5 : 0.0) + (bearishBreak ? 0.5 : 0.0)
 float longEvidence = 0.25 * longContext + 0.30 * longTrend + 0.20 * (accumulating ? 1.0 : 0.0) + 0.25 * longStructure
 float shortEvidence = 0.25 * shortContext + 0.30 * shortTrend + 0.20 * (distributing ? 1.0 : 0.0) + 0.25 * shortStructure
 
+int readyComponents = (not na(activeVwap) ? 1 : 0) + (not na(longEma) ? 1 : 0) + (not na(marketReturn) ? 1 : 0) + (not na(sectorReturn) ? 1 : 0) + (not na(priorVolumeBaseline) ? 1 : 0) + (timeframeReady1 ? 1 : 0) + (timeframeReady2 ? 1 : 0) + (timeframeReady3 ? 1 : 0)
+float dataConfidence = readyComponents / 8.0 * 100
+float computedLongScore = longEvidence * dataConfidence
+float computedShortScore = shortEvidence * dataConfidence
+bool dataApproved = confirmationTimeframesValid and dataConfidence >= minimumDataConfidence
+bool longResearchApproved = dataApproved and longEvidence >= minimumEvidence
+bool shortResearchApproved = dataApproved and shortEvidence >= minimumEvidence
+
 bool inDateRange = time >= startDate and time <= endDate
 bool inSession = not timeframe.isintraday or not useSessionFilter or not na(time(timeframe.period, tradeSession))
-bool researchApproved = catalystScore >= minimumCatalystScore and catalystConfidence >= minimumConfidence
+bool inFixedSample = sampleMode == "All data" or sampleMode == "In-sample" and time < validationStart or sampleMode == "Out-of-sample" and time >= validationStart
+var int firstResearchBar = na
+if inDateRange and na(firstResearchBar)
+    firstResearchBar := bar_index
+int foldLength = walkForwardTrainingBars + walkForwardTestBars
+int foldOffset = na(firstResearchBar) ? 0 : bar_index - firstResearchBar
+int foldPosition = foldLength > 0 ? foldOffset % foldLength : 0
+bool inWalkForwardTest = not na(firstResearchBar) and foldOffset >= walkForwardTrainingBars and foldPosition >= walkForwardTrainingBars
+bool sampleEligible = sampleMode == "Walk-forward OOS" ? inWalkForwardTest : inFixedSample
 bool longLocation = close >= activeVwap and (close - activeVwap) / atr <= maximumExtension
 bool shortLocation = close <= activeVwap and (activeVwap - close) / atr <= maximumExtension
 var int lastSignalBar = na
 bool cooldownReady = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
-bool longSignal = barstate.isconfirmed and inDateRange and inSession and cooldownReady and allowLongs and researchApproved and longLocation and bullishVotes >= minimumMtfVotes and longEvidence >= minimumEvidence
-bool shortSignal = barstate.isconfirmed and inDateRange and inSession and cooldownReady and allowShorts and researchApproved and shortLocation and bearishVotes >= minimumMtfVotes and shortEvidence >= minimumEvidence
+bool longSignal = barstate.isconfirmed and inDateRange and sampleEligible and inSession and cooldownReady and allowLongs and longResearchApproved and longLocation and bullishVotes >= minimumMtfVotes
+bool shortSignal = barstate.isconfirmed and inDateRange and sampleEligible and inSession and cooldownReady and allowShorts and shortResearchApproved and shortLocation and bearishVotes >= minimumMtfVotes
 
 float longAtrStop = close - stopAtrMultiplier * atr
 float longStructureStop = na(lastSwingLow) ? longAtrStop : lastSwingLow - structureBuffer * atr
@@ -166,7 +195,6 @@ float longQuantity = math.max(math.min(riskCapital / math.max(longRisk * syminfo
 float shortQuantity = math.max(math.min(riskCapital / math.max(shortRisk * syminfo.pointvalue, syminfo.mintick), allocationQuantity), 0)
 
 var float initialStop = na
-var float initialRisk = na
 var float firstTarget = na
 var float finalTarget = na
 var float runnerStop = na
@@ -176,7 +204,6 @@ var bool firstTargetTouched = false
 if strategy.position_size == 0
     if longSignal and longQuantity > 0
         initialStop := longCandidateStop
-        initialRisk := longRisk
         firstTarget := close + firstTargetR * longRisk
         finalTarget := close + finalTargetR * longRisk
         runnerStop := initialStop
@@ -184,9 +211,10 @@ if strategy.position_size == 0
         firstTargetTouched := false
         lastSignalBar := bar_index
         strategy.entry("Long", strategy.long, qty = longQuantity)
+        strategy.exit("Long T1", "Long", stop = initialStop, limit = firstTarget, qty_percent = firstTargetQuantity)
+        strategy.exit("Long runner", "Long", stop = runnerStop, limit = finalTarget, qty_percent = 100 - firstTargetQuantity)
     else if shortSignal and shortQuantity > 0
         initialStop := shortCandidateStop
-        initialRisk := shortRisk
         firstTarget := close - firstTargetR * shortRisk
         finalTarget := close - finalTargetR * shortRisk
         runnerStop := initialStop
@@ -194,6 +222,8 @@ if strategy.position_size == 0
         firstTargetTouched := false
         lastSignalBar := bar_index
         strategy.entry("Short", strategy.short, qty = shortQuantity)
+        strategy.exit("Short T1", "Short", stop = initialStop, limit = firstTarget, qty_percent = firstTargetQuantity)
+        strategy.exit("Short runner", "Short", stop = runnerStop, limit = finalTarget, qty_percent = 100 - firstTargetQuantity)
 
 if strategy.position_size > 0
     firstTargetTouched := firstTargetTouched or high >= firstTarget
@@ -215,44 +245,49 @@ if strategy.position_size < 0
 
 bool timeStop = strategy.position_size != 0 and not na(entryBar) and bar_index - entryBar >= maximumBarsInTrade
 bool afterSession = timeframe.isintraday and closeAtSessionEnd and na(time(timeframe.period, tradeSession)) and not na(time(timeframe.period, tradeSession)[1])
-if timeStop or afterSession or time > endDate
-    strategy.close_all(comment = timeStop ? "Time stop" : afterSession ? "Session close" : "Backtest end")
+if timeStop or afterSession or time > endDate or not sampleEligible
+    strategy.close_all(comment = timeStop ? "Time stop" : afterSession ? "Session close" : not sampleEligible ? "Validation boundary" : "Backtest end")
 
 if strategy.position_size == 0 and strategy.position_size[1] != 0
     initialStop := na
-    initialRisk := na
     firstTarget := na
     finalTarget := na
     runnerStop := na
     entryBar := na
     firstTargetTouched := false
 
-plot(activeVwap, "Active VWAP", color = close >= activeVwap ? color.teal : color.orange, linewidth = 2)
+color vwapColor = close >= activeVwap ? color.teal : color.orange
+plot(activeVwap, "Active VWAP", color = vwapColor, linewidth = 2)
 upperPlot = plot(upperBand, "Upper VWAP band", color = color.new(color.teal, 55))
 lowerPlot = plot(lowerBand, "Lower VWAP band", color = color.new(color.teal, 55))
 fill(upperPlot, lowerPlot, color = color.new(color.teal, 92), title = "VWAP value area")
-plot(fastEma, "Fast EMA", color = color.new(color.blue, 25))
-plot(slowEma, "Slow EMA", color = color.new(color.purple, 25))
+plot(fastEma, "Fast EMA", color = color.blue)
+plot(slowEma, "Slow EMA", color = color.purple)
 plot(strategy.position_size != 0 ? runnerStop : na, "Active runner stop", color = color.red, style = plot.style_linebr)
 plot(strategy.position_size != 0 ? firstTarget : na, "First target", color = color.new(color.lime, 25), style = plot.style_linebr)
 plot(strategy.position_size != 0 ? finalTarget : na, "Final target", color = color.lime, style = plot.style_linebr)
-plotshape(longSignal and strategy.position_size == 0, "Long setup", shape.triangleup, location.belowbar, color.lime, size = size.tiny)
-plotshape(shortSignal and strategy.position_size == 0, "Short setup", shape.triangledown, location.abovebar, color.red, size = size.tiny)
+plotshape(longSignal and strategy.position_size == 0, "Long setup", shape.labelup, location.belowbar, color = color.lime, text = "BUY", textcolor = color.black, size = size.tiny)
+plotshape(shortSignal and strategy.position_size == 0, "Short setup", shape.labeldown, location.abovebar, color = color.red, text = "SELL", textcolor = color.white, size = size.tiny)
 
-var table dashboard = table.new(position.top_right, 2, 6, border_width = 1)
+var table dashboard = table.new(position.top_right, 2, 8, border_width = 1)
 if barstate.islast
-    table.cell(dashboard, 0, 0, "CatalystAI", bgcolor = color.new(color.blue, 70))
-    table.cell(dashboard, 1, 0, researchApproved ? "APPROVED" : "BLOCKED", text_color = researchApproved ? color.lime : color.red)
-    table.cell(dashboard, 0, 1, "Score / confidence")
-    table.cell(dashboard, 1, 1, str.tostring(catalystScore, "#.0") + " / " + str.tostring(catalystConfidence, "#.0") + "%")
-    table.cell(dashboard, 0, 2, "Long evidence")
-    table.cell(dashboard, 1, 2, str.tostring(longEvidence * 100, "#.0") + "%")
-    table.cell(dashboard, 0, 3, "Short evidence")
-    table.cell(dashboard, 1, 3, str.tostring(shortEvidence * 100, "#.0") + "%")
+    table.cell(dashboard, 0, 0, "Computed gate")
+    table.cell(dashboard, 1, 0, dataApproved ? "DATA READY" : "BLOCKED", text_color = dataApproved ? color.lime : color.red)
+    table.cell(dashboard, 0, 1, "Long score")
+    table.cell(dashboard, 1, 1, str.tostring(computedLongScore, "#.0") + "%")
+    table.cell(dashboard, 0, 2, "Short score")
+    table.cell(dashboard, 1, 2, str.tostring(computedShortScore, "#.0") + "%")
+    table.cell(dashboard, 0, 3, "Data confidence")
+    table.cell(dashboard, 1, 3, str.tostring(dataConfidence, "#.0") + "%")
     table.cell(dashboard, 0, 4, "MTF votes L / S")
     table.cell(dashboard, 1, 4, str.tostring(bullishVotes) + " / " + str.tostring(bearishVotes))
-    table.cell(dashboard, 0, 5, "VWAP mode")
-    table.cell(dashboard, 1, 5, vwapMode)
+    table.cell(dashboard, 0, 5, "Confirmations")
+    table.cell(dashboard, 1, 5, confirmationTimeframe1 + " / " + confirmationTimeframe2 + " / " + confirmationTimeframe3)
+    table.cell(dashboard, 0, 6, "Sample")
+    table.cell(dashboard, 1, 6, sampleMode)
+    table.cell(dashboard, 0, 7, "VWAP mode")
+    table.cell(dashboard, 1, 7, vwapMode)
 
-alertcondition(longSignal and strategy.position_size == 0, "CatalystAI VWAPPlus long", "CatalystAI VWAPPlus PRO long conditions passed on {{ticker}}.")
-alertcondition(shortSignal and strategy.position_size == 0, "CatalystAI VWAPPlus short", "CatalystAI VWAPPlus PRO short conditions passed on {{ticker}}.")
+alertcondition(longSignal and strategy.position_size == 0, "CatalystAI VWAPPlus long", "Validated VWAPPlus long conditions passed on {{ticker}} {{interval}}.")
+alertcondition(shortSignal and strategy.position_size == 0, "CatalystAI VWAPPlus short", "Validated VWAPPlus short conditions passed on {{ticker}} {{interval}}.")
+
