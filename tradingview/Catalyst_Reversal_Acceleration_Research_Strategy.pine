@@ -1,0 +1,97 @@
+//@version=6
+strategy("Catalyst Reversal Acceleration Research", "CRA Research", overlay = true, pyramiding = 0, initial_capital = 100000, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 1, process_orders_on_close = false)
+
+groupTest = "01 - Validation"
+startDate = input.time(timestamp("01 Jan 2020 00:00 +0000"), "Start", group = groupTest)
+endDate = input.time(timestamp("31 Dec 2099 00:00 +0000"), "End", group = groupTest)
+sampleMode = input.string("All data", "Sample", options = ["All data", "In-sample", "Out-of-sample"], group = groupTest)
+oosStart = input.time(timestamp("01 Jan 2025 00:00 +0000"), "Out-of-sample starts", group = groupTest)
+tradeSession = input.session("0930-1600", "Intraday session", group = groupTest)
+
+groupSetup = "02 - Capitulation and reclaim"
+drawdownLookback = input.int(60, "Prior-high lookback", minval = 20, group = groupSetup)
+minimumDrawdown = input.float(15.0, "Minimum drawdown (%)", minval = 5, group = groupSetup) / 100
+rsiLength = input.int(14, "RSI length", minval = 2, group = groupSetup)
+maximumCapitulationRsi = input.float(30.0, "Maximum capitulation RSI", minval = 5, maxval = 45, group = groupSetup)
+capitulationWindow = input.int(15, "Maximum days since capitulation", minval = 1, group = groupSetup)
+volumeLength = input.int(20, "Volume baseline", minval = 5, group = groupSetup)
+minimumVolumeShock = input.float(1.5, "Minimum capitulation relative volume", minval = 1, group = groupSetup)
+reclaimEmaLength = input.int(10, "Reclaim EMA", minval = 2, group = groupSetup)
+
+groupConfirm = "03 - Acceleration confirmation"
+benchmark = input.symbol("AMEX:SPY", "Benchmark", group = groupConfirm)
+relativeStrengthDays = input.int(5, "Relative-strength days", minval = 2, group = groupConfirm)
+minimumExcessReturn = input.float(2.0, "Minimum excess return (%)", minval = -10, group = groupConfirm) / 100
+breakoutLookback = input.int(10, "Recovery breakout lookback", minval = 2, group = groupConfirm)
+trendEmaLength = input.int(20, "Rising-trend EMA", minval = 5, group = groupConfirm)
+requireRelativeStrength = input.bool(true, "Require relative-strength turn", group = groupConfirm)
+requireBreakout = input.bool(false, "Require recovery breakout", group = groupConfirm)
+requireRisingTrend = input.bool(false, "Require rising trend", group = groupConfirm)
+manualCatalystConfirmed = input.bool(false, "Manual catalyst confirmed", group = groupConfirm, tooltip = "Optional human check for earnings, guidance, regulatory, contract, product, or sector catalyst.")
+requireManualCatalyst = input.bool(false, "Require manual catalyst", group = groupConfirm)
+
+groupRisk = "04 - Aggressive risk research"
+riskPercent = input.float(0.75, "Equity risk per trade (%)", minval = 0.1, maxval = 2, group = groupRisk)
+atrLength = input.int(14, "ATR length", minval = 2, group = groupRisk)
+stopAtr = input.float(2.5, "Initial stop (ATR)", minval = 0.5, group = groupRisk)
+firstTarget = input.float(20.0, "First target (%)", minval = 5, group = groupRisk) / 100
+runnerTarget = input.float(50.0, "Runner target (%)", minval = 10, group = groupRisk) / 100
+firstTargetQty = input.float(50.0, "First target quantity (%)", minval = 10, maxval = 90, group = groupRisk)
+trailAtr = input.float(3.0, "Runner trail (ATR)", minval = 0.5, group = groupRisk)
+maxHoldDays = input.int(126, "Maximum holding days", minval = 5, group = groupRisk)
+
+dailyState() =>
+    float dd = 1 - close[1] / ta.highest(high[2], drawdownLookback)
+    float dailyRsi = ta.rsi(close, rsiLength)[1]
+    float rv = volume[1] / math.max(ta.sma(volume[2], volumeLength), 1)
+    bool capitulationNow = dd >= minimumDrawdown and dailyRsi <= maximumCapitulationRsi and rv >= minimumVolumeShock
+    int sinceCapitulation = ta.barssince(capitulationNow)
+    bool recentCapitulation = not na(sinceCapitulation) and sinceCapitulation <= capitulationWindow
+    bool reclaim = close[1] > ta.ema(close, reclaimEmaLength)[1] and close[1] > high[2]
+    bool breakout = close[1] > ta.highest(high[2], breakoutLookback)
+    float trendEma = ta.ema(close, trendEmaLength)
+    bool risingTrend = close[1] > trendEma[1] and trendEma[1] > trendEma[2]
+    float completedReturn = close[1] / close[relativeStrengthDays + 1] - 1
+    float priorCompletedReturn = close[2] / close[relativeStrengthDays + 2] - 1
+    [dd, ta.lowest(dailyRsi, capitulationWindow), ta.highest(rv, capitulationWindow), recentCapitulation, reclaim, breakout, risingTrend, completedReturn, priorCompletedReturn, ta.atr(atrLength)[1]]
+
+[dailyDrawdown, minimumRecentRsi, maximumRecentRvol, recentCapitulation, dailyReclaim, recoveryBreakout, risingTrend, assetReturn, priorAssetReturn, dailyAtr] = request.security(syminfo.tickerid, "1D", dailyState(), barmerge.gaps_off, barmerge.lookahead_off)
+[benchmarkReturn, priorBenchmarkReturn] = request.security(benchmark, "1D", [close[1] / close[relativeStrengthDays + 1] - 1, close[2] / close[relativeStrengthDays + 2] - 1], barmerge.gaps_off, barmerge.lookahead_off)
+float excessReturn = assetReturn - benchmarkReturn
+float priorExcessReturn = priorAssetReturn - priorBenchmarkReturn
+bool relativeTurn = excessReturn >= minimumExcessReturn and excessReturn > priorExcessReturn
+bool catalystGate = not requireManualCatalyst or manualCatalystConfirmed
+bool entrySetup = recentCapitulation and dailyReclaim and (not requireRelativeStrength or relativeTurn) and (not requireBreakout or recoveryBreakout) and (not requireRisingTrend or risingTrend) and catalystGate
+
+bool intraday = timeframe.isintraday
+bool inSession = intraday ? not na(time(timeframe.period, tradeSession)) : true
+bool newSession = intraday ? inSession and not inSession[1] : timeframe.change("D")
+bool sampleEligible = sampleMode == "All data" or sampleMode == "In-sample" and time < oosStart or sampleMode == "Out-of-sample" and time >= oosStart
+bool eligible = barstate.isconfirmed and newSession and time >= startDate and time <= endDate and sampleEligible
+bool buySignal = eligible and strategy.position_size == 0 and entrySetup
+float riskCapital = strategy.equity * riskPercent / 100
+float initialRisk = math.max(stopAtr * dailyAtr, syminfo.mintick)
+var float activeStop = na
+var float highSinceEntry = na
+var int entryTime = na
+if buySignal
+    activeStop := close - initialRisk
+    highSinceEntry := high
+    entryTime := time
+    strategy.entry("Long", strategy.long, qty = riskCapital / math.max(initialRisk * syminfo.pointvalue, syminfo.mintick))
+if strategy.position_size > 0
+    highSinceEntry := math.max(nz(highSinceEntry, high), high)
+    float runnerStop = math.max(activeStop, highSinceEntry - trailAtr * dailyAtr)
+    strategy.exit("First target", "Long", stop = activeStop, limit = strategy.position_avg_price * (1 + firstTarget), qty_percent = firstTargetQty)
+    strategy.exit("Runner", "Long", stop = runnerStop, limit = strategy.position_avg_price * (1 + runnerTarget), qty_percent = 100 - firstTargetQty)
+    if not na(entryTime) and time - entryTime >= maxHoldDays * 86400000
+        strategy.close("Long", comment = "Maximum hold")
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    activeStop := na
+    highSinceEntry := na
+    entryTime := na
+
+plotshape(buySignal, "BUY signal", shape.labelup, location.belowbar, color = color.rgb(0, 180, 70), text = "CRA BUY", textcolor = color.white, size = size.small)
+plot(strategy.position_size > 0 ? activeStop : na, "Initial stop", color = color.red, style = plot.style_linebr)
+alertcondition(buySignal, "CRA BUY", "Catalyst reversal acceleration BUY on {{ticker}} {{interval}}")
+

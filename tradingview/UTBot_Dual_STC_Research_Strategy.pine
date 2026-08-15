@@ -1,0 +1,109 @@
+//@version=6
+strategy("Dual UT Bot + STC Research", "UTx2 STC Research", overlay = true, pyramiding = 0, initial_capital = 100000, commission_type = strategy.commission.percent, commission_value = 0.05, slippage = 1, process_orders_on_close = false)
+
+// Reproduction of the public dual-UT/STC rules. Confirmed bars only; no lookahead.
+groupTest = "01 - Validation"
+startDate = input.time(timestamp("01 Jan 2020 00:00 +0000"), "Start", group = groupTest)
+endDate = input.time(timestamp("31 Dec 2099 00:00 +0000"), "End", group = groupTest)
+sampleMode = input.string("All data", "Sample", options = ["All data", "In-sample", "Out-of-sample"], group = groupTest)
+oosStart = input.time(timestamp("01 Jan 2025 00:00 +0000"), "Out-of-sample starts", group = groupTest)
+tradeSession = input.session("0930-1600", "Intraday session", group = groupTest)
+
+groupUT = "02 - Dual UT Bot"
+buyKey = input.float(2.0, "Buy key value", minval = 0.1, group = groupUT)
+buyAtrLength = input.int(300, "Buy ATR period", minval = 1, group = groupUT)
+sellKey = input.float(2.0, "Sell key value", minval = 0.1, group = groupUT)
+sellAtrLength = input.int(1, "Sell ATR period", minval = 1, group = groupUT)
+
+groupSTC = "03 - STC"
+stcLength = input.int(80, "Length", minval = 2, group = groupSTC)
+stcFast = input.int(27, "Fast length", minval = 1, group = groupSTC)
+stcSlow = input.int(50, "Slow length", minval = 2, group = groupSTC)
+stcAlpha = input.float(0.05, "AAA smoothing (message: 0.05; screenshot: 0.5)", minval = 0.01, maxval = 1, step = 0.01, group = groupSTC)
+confirmationBars = input.int(0, "Maximum bars between UT and STC events", minval = 0, maxval = 20, group = groupSTC)
+
+groupRisk = "04 - Explicit risk approximation"
+structureLookback = input.int(10, "Nearest structure lookback", minval = 2, group = groupRisk)
+rewardRisk = input.float(1.5, "Target reward/risk", minval = 0.25, group = groupRisk)
+riskPercent = input.float(0.5, "Equity risk (%)", minval = 0.1, maxval = 2, group = groupRisk)
+maxBars = input.int(200, "Maximum holding bars", minval = 1, group = groupRisk)
+
+utStop(float src, int atrPeriod, float key) =>
+    float loss = key * ta.atr(atrPeriod)
+    float stop = na
+    float prior = nz(stop[1], src)
+    stop := src > prior and src[1] > prior ? math.max(prior, src - loss) : src < prior and src[1] < prior ? math.min(prior, src + loss) : src > prior ? src - loss : src + loss
+    stop
+
+stc(float src, int cycleLength, int fastLength, int slowLength, float alpha) =>
+    float macd = ta.ema(src, fastLength) - ta.ema(src, slowLength)
+    float macdLow = ta.lowest(macd, cycleLength)
+    float macdRange = ta.highest(macd, cycleLength) - macdLow
+    float k1 = na
+    k1 := macdRange > 0 ? 100 * (macd - macdLow) / macdRange : nz(k1[1])
+    float d1 = na
+    d1 := na(d1[1]) ? k1 : d1[1] + alpha * (k1 - d1[1])
+    float d1Low = ta.lowest(d1, cycleLength)
+    float d1Range = ta.highest(d1, cycleLength) - d1Low
+    float k2 = na
+    k2 := d1Range > 0 ? 100 * (d1 - d1Low) / d1Range : nz(k2[1])
+    float out = na
+    out := na(out[1]) ? k2 : out[1] + alpha * (k2 - out[1])
+    out
+
+float buyStop = utStop(close, buyAtrLength, buyKey)
+float sellStop = utStop(close, sellAtrLength, sellKey)
+bool utBuy = ta.crossover(close, buyStop)
+bool utSell = ta.crossunder(close, sellStop)
+float cycle = stc(close, stcLength, stcFast, stcSlow, stcAlpha)
+bool stcBuy = ta.crossover(cycle, 25) and cycle > cycle[1]
+bool stcSell = ta.crossunder(cycle, 75) and cycle < cycle[1]
+int sinceUtBuy = ta.barssince(utBuy)
+int sinceUtSell = ta.barssince(utSell)
+int sinceStcBuy = ta.barssince(stcBuy)
+int sinceStcSell = ta.barssince(stcSell)
+bool longSetup = (utBuy and sinceStcBuy <= confirmationBars) or (stcBuy and sinceUtBuy <= confirmationBars)
+bool shortSetup = (utSell and sinceStcSell <= confirmationBars) or (stcSell and sinceUtSell <= confirmationBars)
+
+bool intraday = timeframe.isintraday
+bool inSession = intraday ? not na(time(timeframe.period, tradeSession)) : true
+bool sampleEligible = sampleMode == "All data" or sampleMode == "In-sample" and time < oosStart or sampleMode == "Out-of-sample" and time >= oosStart
+bool eligible = barstate.isconfirmed and inSession and time >= startDate and time <= endDate and sampleEligible
+float longStructure = ta.lowest(low[1], structureLookback)
+float shortStructure = ta.highest(high[1], structureLookback)
+float longRisk = close - longStructure
+float shortRisk = shortStructure - close
+float riskCapital = strategy.equity * riskPercent / 100
+var float activeStop = na
+var float activeTarget = na
+var int entryBar = na
+bool buySignal = eligible and strategy.position_size == 0 and longSetup and longRisk > syminfo.mintick
+bool sellSignal = eligible and strategy.position_size == 0 and shortSetup and shortRisk > syminfo.mintick and not buySignal
+if buySignal
+    activeStop := longStructure
+    activeTarget := close + rewardRisk * longRisk
+    entryBar := bar_index
+    strategy.entry("Long", strategy.long, qty = riskCapital / math.max(longRisk * syminfo.pointvalue, syminfo.mintick))
+if sellSignal
+    activeStop := shortStructure
+    activeTarget := close - rewardRisk * shortRisk
+    entryBar := bar_index
+    strategy.entry("Short", strategy.short, qty = riskCapital / math.max(shortRisk * syminfo.pointvalue, syminfo.mintick))
+if strategy.position_size > 0
+    strategy.exit("Long risk exit", "Long", stop = activeStop, limit = activeTarget)
+if strategy.position_size < 0
+    strategy.exit("Short risk exit", "Short", stop = activeStop, limit = activeTarget)
+if strategy.position_size != 0 and not na(entryBar) and bar_index - entryBar >= maxBars
+    strategy.close_all(comment = "Maximum hold")
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    activeStop := na
+    activeTarget := na
+    entryBar := na
+
+plot(buyStop, "UT buy-side trailing stop", color = color.new(color.green, 20))
+plot(sellStop, "UT sell-side trailing stop", color = color.new(color.red, 20))
+plotshape(buySignal, "BUY signal", shape.labelup, location.belowbar, color = color.rgb(0, 180, 70), text = "BUY", textcolor = color.white, size = size.small)
+plotshape(sellSignal, "SELL signal", shape.labeldown, location.abovebar, color = color.rgb(220, 35, 35), text = "SELL", textcolor = color.white, size = size.small)
+alertcondition(buySignal, "Dual UT + STC BUY", "Dual UT + STC BUY on {{ticker}} {{interval}}")
+alertcondition(sellSignal, "Dual UT + STC SELL", "Dual UT + STC SELL on {{ticker}} {{interval}}")
+
