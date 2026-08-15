@@ -1,0 +1,45 @@
+//@version=6
+indicator("VWAPPlus IBS 5% Swing Screener", "IBS 5% Screener", overlay = true)
+
+groupSetup = "01 - IBS setup"
+ibsThreshold = input.float(0.30, "Maximum IBS", minval = 0.05, maxval = 0.50, step = 0.05, group = groupSetup)
+highLookback = input.int(10, "Recent-high lookback", minval = 2, group = groupSetup)
+rangeLookback = input.int(25, "Average-range lookback", minval = 5, group = groupSetup)
+declineMultiple = input.float(2.5, "Decline range multiple", minval = 0.5, step = 0.25, group = groupSetup)
+targetPercent = input.float(5.0, "Target (%)", minval = 0.5, step = 0.5, group = groupSetup) / 100
+
+// A single tuple request keeps the companion within Pine Screener limits.
+// All setup fields use [1], so only the completed daily candle is evaluated.
+[priorIbs, priorAvgRange, priorRecentHigh, priorClose, currentDailyOpen, completedSetup] = request.security(
+     syminfo.tickerid,
+     "1D",
+     [high[1] > low[1] ? (close[1] - low[1]) / (high[1] - low[1]) : 0.5,
+      ta.sma(high[1] - low[1], rangeLookback),
+      ta.highest(high[1], highLookback),
+      close[1],
+      open,
+      (high[1] > low[1] ? (close[1] - low[1]) / (high[1] - low[1]) : 0.5) < ibsThreshold and
+       close[1] < ta.highest(high[1], highLookback) - declineMultiple * ta.sma(high[1] - low[1], rangeLookback)],
+     barmerge.gaps_off,
+     barmerge.lookahead_off)
+
+float declineStrength = priorAvgRange > 0 ? (priorRecentHigh - priorClose) / priorAvgRange : 0
+float entryReference = currentDailyOpen
+float targetPrice = entryReference * (1 + targetPercent)
+bool firstChartBarOfDay = timeframe.change("D")
+bool newBuyEvent = completedSetup and firstChartBarOfDay
+int barsSinceSignal = ta.barssince(newBuyEvent)
+
+// The first plots become Pine Screener columns and filters.
+plot(completedSetup ? 1 : 0, "Setup ready", display = display.data_window)
+plot(newBuyEvent ? 1 : 0, "New BUY event", display = display.data_window)
+plot(priorIbs, "IBS value", display = display.data_window)
+plot(declineStrength, "Decline strength", display = display.data_window)
+plot(entryReference, "Entry reference", display = display.data_window)
+plot(targetPrice, "5% target", display = display.data_window)
+plot(barsSinceSignal, "Bars since signal", display = display.data_window)
+
+plotshape(newBuyEvent, "BUY label", shape.labelup, location.belowbar, color = color.rgb(0, 180, 70), text = "BUY", textcolor = color.white, size = size.small)
+alertcondition(completedSetup, "IBS setup ready", "IBS daily setup ready on {{ticker}}")
+alertcondition(newBuyEvent, "IBS new BUY", "IBS new BUY on {{ticker}} {{interval}}")
+

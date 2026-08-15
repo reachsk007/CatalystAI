@@ -1,0 +1,55 @@
+//@version=6
+indicator("Catalyst Reversal Acceleration Screener", "CRA Screener", overlay = true)
+
+drawdownLookback = input.int(60, "Prior-high lookback", minval = 20)
+minimumDrawdown = input.float(15.0, "Minimum drawdown (%)", minval = 5) / 100
+rsiLength = input.int(14, "RSI length", minval = 2)
+maximumCapitulationRsi = input.float(30.0, "Maximum capitulation RSI", minval = 5, maxval = 45)
+capitulationWindow = input.int(15, "Maximum days since capitulation", minval = 1)
+volumeLength = input.int(20, "Volume baseline", minval = 5)
+minimumVolumeShock = input.float(1.5, "Minimum capitulation relative volume", minval = 1)
+reclaimEmaLength = input.int(10, "Reclaim EMA", minval = 2)
+relativeStrengthDays = input.int(5, "Relative-strength days", minval = 2)
+minimumExcessReturn = input.float(2.0, "Minimum excess return (%)", minval = -10) / 100
+breakoutLookback = input.int(10, "Recovery breakout lookback", minval = 2)
+trendEmaLength = input.int(20, "Rising-trend EMA", minval = 5)
+
+dailyState() =>
+    float dd = 1 - close[1] / ta.highest(high[2], drawdownLookback)
+    float rsi = ta.rsi(close, rsiLength)[1]
+    float rv = volume[1] / math.max(ta.sma(volume[2], volumeLength), 1)
+    bool capNow = dd >= minimumDrawdown and rsi <= maximumCapitulationRsi and rv >= minimumVolumeShock
+    int sinceCap = ta.barssince(capNow)
+    bool recentCap = not na(sinceCap) and sinceCap <= capitulationWindow
+    bool reclaim = close[1] > ta.ema(close, reclaimEmaLength)[1] and close[1] > high[2]
+    bool breakout = close[1] > ta.highest(high[2], breakoutLookback)
+    float trendEma = ta.ema(close, trendEmaLength)
+    bool risingTrend = close[1] > trendEma[1] and trendEma[1] > trendEma[2]
+    float completedReturn = close[1] / close[relativeStrengthDays + 1] - 1
+    float priorCompletedReturn = close[2] / close[relativeStrengthDays + 2] - 1
+    [dd, ta.lowest(rsi, capitulationWindow), ta.highest(rv, capitulationWindow), recentCap, reclaim, breakout, risingTrend, completedReturn, priorCompletedReturn, close[1], ta.atr(14)[1], sinceCap]
+
+[drawdown, minimumRsi, maximumRvol, recentCapitulation, reclaim, breakout, risingTrend, assetReturn, priorAssetReturn, referencePrice, dailyAtr, daysSinceCapitulation] = request.security(syminfo.tickerid, "1D", dailyState(), barmerge.gaps_off, barmerge.lookahead_off)
+[benchmarkReturn, priorBenchmarkReturn] = request.security("AMEX:SPY", "1D", [close[1] / close[relativeStrengthDays + 1] - 1, close[2] / close[relativeStrengthDays + 2] - 1], barmerge.gaps_off, barmerge.lookahead_off)
+float excessReturn = assetReturn - benchmarkReturn
+float priorExcessReturn = priorAssetReturn - priorBenchmarkReturn
+bool relativeTurn = excessReturn >= minimumExcessReturn and excessReturn > priorExcessReturn
+bool entryReady = recentCapitulation and reclaim and relativeTurn and breakout and risingTrend
+int phase = entryReady ? 4 : recentCapitulation and reclaim and relativeTurn ? 3 : recentCapitulation and reclaim ? 2 : recentCapitulation ? 1 : 0
+float score = math.min(100, (drawdown >= minimumDrawdown ? 15 : 0) + (minimumRsi <= maximumCapitulationRsi ? 15 : 0) + (maximumRvol >= minimumVolumeShock ? 15 : 0) + (reclaim ? 15 : 0) + (relativeTurn ? 15 : 0) + (breakout ? 15 : 0) + (risingTrend ? 10 : 0))
+
+plot(entryReady ? 1 : 0, "Entry ready", display = display.data_window)
+plot(score, "CRA score", display = display.data_window)
+plot(phase, "Phase 0-4", display = display.data_window)
+plot(drawdown * 100, "Drawdown %", display = display.data_window)
+plot(minimumRsi, "Minimum recent RSI", display = display.data_window)
+plot(maximumRvol, "Maximum relative volume", display = display.data_window)
+plot(excessReturn * 100, "5-day excess return %", display = display.data_window)
+plot(risingTrend ? 1 : 0, "Rising trend", display = display.data_window)
+plot(referencePrice, "Reference price", display = display.data_window)
+plot(referencePrice * 1.20, "20% objective", display = display.data_window)
+plot(referencePrice * 1.50, "50% objective", display = display.data_window)
+plot(daysSinceCapitulation, "Days since capitulation", display = display.data_window)
+plotshape(timeframe.change("D") and entryReady, "CRA BUY label", shape.labelup, location.belowbar, color = color.rgb(170, 0, 255), text = "CRA", textcolor = color.white, size = size.small)
+alertcondition(entryReady, "CRA entry ready", "Catalyst reversal acceleration entry ready on {{ticker}}")
+
